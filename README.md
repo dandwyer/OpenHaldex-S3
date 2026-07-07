@@ -357,7 +357,7 @@ Build configuration:
 
 OpenHaldex-S3 builds on the original OpenHaldex project by BangingDonk and subsequent OpenHaldex-C6 work by Forbes Automotive.
 
-This project adapts and extends that work for ESP32-S3 hardware, inline installation, live tuning, Gen 5 support, and additional telemetry.
+This project adapts and extends that work for ESP32-S3 hardware, adding inline installation, "Expert Mode" speed-throttle Haldex tuning, live map editing/trace, interpolation, API control, GVRET/SavvyCAN and CAN View, DBC integration, UDS/KWP/TP2.0 diagnostic functions, and more.
 
 ## Licensing
 
@@ -365,7 +365,7 @@ OpenHaldex-S3 is a split-license repository.
 
 - Original OpenHaldex-S3 firmware code and MIT-upstream code remain under MIT.
 - The web UI in `data/` is separately licensed under `data/LICENSE.md`.
-- Gen 5 support and identified OpenHaldex-C6-derived portions are distributed under the Forbes Automotive Source-Available License (FASL) v1.0 and are non-commercial only.
+- Gen 5 support is the only OpenHaldex-C6-derived portion distributed under the Forbes Automotive Source-Available License (FASL) v1.0 and is non-commercial only. All other functions and features are original to the OpenHaldex-S3 project and later added to OpenHaldex-C6. See "Public History" section for more info: <https://github.com/meatro/OpenHaldex-S3#public-history>
 
 If you redistribute source or binaries that include Gen 5 support, keep the third-party notices and Forbes FASL text with the distribution.
 
