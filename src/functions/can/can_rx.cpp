@@ -13,6 +13,7 @@
 #include "functions/canview/vw_pq_chassis_dbc.h"
 #include "functions/can/can_state.h"
 #include "functions/power/power.h"
+#include "functions/diag/uds.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -556,6 +557,7 @@ void parseCAN_hdx(void* arg) {
     uint16_t burst_frames = 0;
     while (haldex_can_receive(rx_msg_hdx())) {
       lastCANHaldexTick = millis();
+      const bool suppress_internal_diag = diagUdsObserveHaldexFrame(rx_msg_hdx());
       canviewCacheFrame(rx_msg_hdx(), 1);
       const uint32_t now_ms = millis();
       apply_mode_trigger_from_frame(rx_msg_hdx(), 1, now_ms);
@@ -618,7 +620,7 @@ void parseCAN_hdx(void* arg) {
       received_speed_limit = (received_haldex_state & (1 << 6));
 
       // Forward Haldex traffic onto chassis CAN (bridge behavior).
-      if (openhaldexEffectiveBroadcastOpenHaldexOverCAN()) {
+      if (openhaldexEffectiveBroadcastOpenHaldexOverCAN() && !suppress_internal_diag) {
         chassis_can_send(rx_msg_hdx(), (10 / portTICK_PERIOD_MS));
       }
 

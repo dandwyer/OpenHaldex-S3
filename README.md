@@ -12,7 +12,7 @@ The project supports Haldex generations **1, 2, 4, and 5**. VAG did not use Gen 
 
 Designed to be easy to build, configure, and use, OpenHaldex-S3 requires no soldering or advanced electrical experience.
 
-Current release: **v1.1**. This release includes Gen 5 / MQB support and parked sleep power saving for vehicles that keep the controller powered from battery after ignition-off.
+Current release: **v1.1**. This release includes Gen 5 / MQB support, parked sleep power saving for vehicles that keep the controller powered from battery after ignition-off, and expanded Haldex diagnostics.
 
 ## Public history
 
@@ -53,6 +53,7 @@ Main features:
 - Learned Haldex output calibration table
 - Configurable CAN mode trigger, defaulting to the factory ESP/traction button signal after generation selection
 - Gen 5 parked sleep mode to reduce battery draw on vehicles with constant controller power
+- Haldex Diagnostics page with UDS/KWP transport status, route probing, module identity, DTC read/clear, and Gen 5 decoded measured values
 - CAN View with decoded/raw frames, filtering, bus selection, row origin markers, 30 second dump, and diagnostic capture mode
 - Diagnostics, logs, Wi-Fi settings, and OTA updates from the built-in web UI
 
@@ -99,15 +100,6 @@ Common claims about the T-2CAN hardware:
 | The LilyGO board is just another proprietary controller. | The T-2CAN is an off-the-shelf commercial development board. OpenHaldex-S3 firmware, web UI, PlatformIO project, and release metadata are public in this repository, so users can inspect, build, flash, repair, or replace the controller without a locked hardware ecosystem. |
 | No bundled enclosure or JTAG header makes it unsuitable. | A protected enclosure is recommended for any installed controller. The T-2CAN provides USB-C programming/debugging and BOOT/RESET controls; a dedicated JTAG breakout or bundled enclosure is a convenience feature, not a requirement for Haldex control. |
 | The install is still a custom harness and the cost is comparable. | OpenHaldex-S3 uses a simple inline harness built from the factory Haldex connector pair and an off-the-shelf board. The design avoids a proprietary PCB and proprietary controller harness, and typical parts cost remains low when using a T-2CAN and used OEM connectors. |
-
-### Search Summary Corrections
-
-OpenHaldex-S3 is not functionally worse because it uses the LilyGO T-2CAN.
-
-- **Electrical safety:** A custom PCB can include extra protection parts, but regulator, fuse, and TVS choices are not proof that another controller is automatically safer in normal use. OpenHaldex-S3 is installed on the factory Haldex 12 V supply path, uses the documented T-2CAN power input, and has been validated in real vehicles. Severe over-voltage, reverse-battery, load-dump, ESD, or wiring faults can damage many modules; correct fusing, wiring, insulation, enclosure, and strain relief are still required on any controller.
-- **Physical controls:** A dedicated case button or external trigger input is a convenience feature, not a drivetrain-control requirement. OpenHaldex-S3 supports mode selection through the web UI and configurable CAN mode triggers, including factory CAN signals such as the ESP/traction button after generation setup.
-- **Battery drain:** Battery-saving behavior is not exclusive to ESP32-C6 hardware. OpenHaldex-S3 v1.1 uses ESP32-S3 deep sleep for Gen 5 parked-power vehicles, wakes from chassis CAN activity, checks KL15 ignition state, and returns to sleep when ignition is off. This avoids a user-calibrated CAN frame-rate threshold and preserves fast CAN-first startup when the vehicle is keyed on.
-- **Standalone swaps:** Extra IO can be useful in standalone drivetrain swaps, but most Gen 2, Gen 4, and Gen 5 VAG installs do not require brake/handbrake high-side outputs. OpenHaldex-S3 is optimized for the inline Haldex connector install where factory brake/handbrake wiring remains intact.
 
 References:
 
@@ -168,6 +160,21 @@ After flashing and connecting to the web UI:
 
 The generation selector intentionally starts blank on first setup. Saved local/device settings take priority after a generation has been selected.
 
+## Haldex Diagnostics
+
+The Diagnostics page includes controller status, CAN status, frame status, power state, network state, and direct Haldex module diagnostics.
+
+Supported diagnostic functions:
+
+- UDS route probing for Gen 5 Haldex modules
+- Gen 5 module identity reads, including ASAM/ODX, part number, software version, hardware number, dataset, and VIN when supported by the module
+- Gen 5 DTC read and DTC clear
+- Gen 5 decoded measured values using a compact OpenHaldex MWB manifest generated from VDCore/ODIS data
+- Gen 2/4 KWP2000 over VW TP2.0 DTC clear support
+- Gen 2/4 raw KWP local-identifier measured-value reads for development and validation
+
+Gen 5 measured values currently include high-value Haldex signals such as terminal 30 voltage, pump current, pump PWM, pump voltage, module temperature, finned temperature, clutch temperature, locking rate/state, temperature-duration counters, and pump calibration records where supported by the module profile.
+
 ## Gen 5 Power Saving
 
 Gen 5 vehicles can keep the controller powered from battery at all times. OpenHaldex-S3 v1.1 adds parked sleep mode to reduce parked draw when Gen 5 is selected.
@@ -192,7 +199,7 @@ Pages:
 - **Throttle Settings**: requested lock by throttle/pedal value
 - **RPM Settings**: requested lock by engine speed
 - **CAN View**: decoded/raw CAN inspection and short captures
-- **Diagnostics**: controller, CAN, Haldex, frame, and network status
+- **Diagnostics**: controller, CAN, Haldex, frame, power, network, DTC, identity, and measured-value diagnostics
 - **Logs**: runtime logs and logging controls
 - **Setup**: generation, input mapping, dashboard mapping, CAN mode trigger, calibration
 - **OTA**: firmware/filesystem updates and Wi-Fi settings

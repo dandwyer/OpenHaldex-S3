@@ -240,6 +240,36 @@ Licensed under the OpenHaldex-S3 UI Attribution License (see /data/LICENSE)
           </div>
           <div class="col-12 col-md-6">
             <section class="ui-card">
+              <div class="ui-section-head"><h2>Haldex Diagnostics</h2></div>
+              <div class="kv-grid">
+                <div class="kv-item">
+                  <span class="kv-label">Protocol</span><span id="udsProtocol" class="kv-value">-</span>
+                </div>
+                <div class="kv-item">
+                  <span class="kv-label">Route</span><span id="udsRoute" class="kv-value">-</span>
+                </div>
+                <div class="kv-item">
+                  <span class="kv-label">Active</span><span id="udsActive" class="kv-value">-</span>
+                </div>
+                <div class="kv-item">
+                  <span class="kv-label">Last Status</span><span id="udsLastStatus" class="kv-value">-</span>
+                </div>
+                <div class="kv-item">
+                  <span class="kv-label">Last NRC</span><span id="udsLastNrc" class="kv-value">-</span>
+                </div>
+              </div>
+              <div class="ui-toolbar compact diag-actions">
+                <button type="button" class="ui-btn secondary" id="udsProbeBtn">Probe</button>
+                <button type="button" class="ui-btn secondary" id="udsIdentityBtn">Identity</button>
+                <button type="button" class="ui-btn secondary" id="udsDtcBtn">DTC</button>
+                <button type="button" class="ui-btn secondary" id="udsMeasuredBtn">Measured</button>
+                <button type="button" class="ui-btn danger" id="udsClearDtcBtn">Clear DTC</button>
+              </div>
+              <pre class="diag-output" id="udsOutput">-</pre>
+            </section>
+          </div>
+          <div class="col-12 col-md-6">
+            <section class="ui-card">
               <div class="ui-section-head"><h2>Power</h2></div>
               <div class="kv-grid">
                 <div class="kv-item">

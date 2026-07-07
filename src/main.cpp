@@ -16,6 +16,7 @@
 #include "functions/web/web.h"
 #include "functions/net/update.h"
 #include "functions/power/power.h"
+#include "functions/diag/uds.h"
 
 static AsyncWebServer server(80);
 
@@ -273,6 +274,7 @@ void setup() {
   storageInit();
   filelogInit();
   storageLoad();
+  diagUdsInit();
   LOG_INFO("system", "Storage loaded and logger active");
 
   tasksInit();

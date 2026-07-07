@@ -1175,6 +1175,18 @@ input[type="range"]:not(.ratio-slider):active::-moz-range-thumb {
   color: var(--brand);
 }
 
+.ui-btn.danger {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--line) 42%);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  color: var(--danger);
+}
+
+.ui-btn.danger:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 76%, #000 24%);
+  color: #fff;
+}
+
 .ui-btn:disabled,
 .setup-btn:disabled,
 .ui-input:disabled,
@@ -1360,6 +1372,28 @@ input[type="checkbox"]:focus-visible {
 
 .diag-grid {
   gap: var(--grid-gap);
+}
+
+.diag-actions {
+  margin-top: 12px;
+}
+
+.diag-output {
+  width: 100%;
+  min-height: 132px;
+  max-height: 260px;
+  margin: 12px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
 }
 
 .kv-grid {

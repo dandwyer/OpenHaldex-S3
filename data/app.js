@@ -4513,6 +4513,16 @@ function initCanviewPage() {
 function initDiagPage() {
   const el = (id) => document.getElementById(id);
   const statusEl = el("status");
+  const udsButtons = [
+    el("udsProbeBtn"),
+    el("udsIdentityBtn"),
+    el("udsDtcBtn"),
+    el("udsMeasuredBtn"),
+    el("udsClearDtcBtn"),
+  ].filter(Boolean);
+  const udsOutput = el("udsOutput");
+  const gen5MwbManifestPath = "/openhaldex-gen5-mwb-compact.json";
+  let gen5MwbManifestPromise = null;
 
   function pill(value) {
     if (value === true || value === 1) return '<span class="pill good">Yes</span>';
@@ -4560,6 +4570,325 @@ function initDiagPage() {
     const node = el(id);
     if (node) node.textContent = value;
   }
+
+  function udsRouteLabel(uds) {
+    const route = uds?.route || {};
+    if (!route.selected) return "None";
+    return `${route.name || "route"} ${route.requestCanId || "?"}->${route.responseCanId || "?"}`;
+  }
+
+  function udsProtocolLabel(uds) {
+    const transport = String(uds?.transport || "").toLowerCase();
+    if (transport === "uds_can") return "UDS / ISO-TP CAN";
+    if (transport === "kwp_tp20" || transport === "vw_tp20") return "KWP2000 / VW TP2.0";
+    if (transport === "kwp_kline") return "KWP2000 / K-line";
+    if (transport === "legacy") return "Legacy";
+    return transport || "-";
+  }
+
+  function udsLastNrc(last) {
+    if (!last || !last.available) return "-";
+    if (!last.negative) return "-";
+    return `${last.nrc || "-"} ${last.nrcName || ""}`.trim();
+  }
+
+  function renderUdsStatus(uds) {
+    setText("udsProtocol", udsProtocolLabel(uds));
+    setText("udsRoute", udsRouteLabel(uds));
+    const active = el("udsActive");
+    if (active) active.innerHTML = pill(Boolean(uds?.active));
+    const last = uds?.last || {};
+    setText("udsLastStatus", last.available ? last.status || "-" : "-");
+    setText("udsLastNrc", udsLastNrc(last));
+  }
+
+  function setUdsBusy(busy) {
+    udsButtons.forEach((button) => {
+      button.disabled = busy;
+    });
+  }
+
+  function writeUdsOutput(text) {
+    if (udsOutput) udsOutput.textContent = text || "-";
+  }
+
+  function routeLine(data) {
+    const route = data?.uds?.route || data?.result?.route || {};
+    return route.selected
+      ? `${route.name || "route"} ${route.requestCanId || "?"}->${route.responseCanId || "?"}`
+      : "No route";
+  }
+
+  function renderProbeResult(data) {
+    const lines = [
+      `Status: ${data?.result?.status || "-"}`,
+      `Route: ${routeLine(data)}`,
+    ];
+    if (data?.asamOdxFileIdentifier) lines.push(`ASAM: ${data.asamOdxFileIdentifier}`);
+    if (data?.result?.responseHex) lines.push(`Response: ${data.result.responseHex}`);
+    if (data?.result?.message) lines.push(`Message: ${data.result.message}`);
+    return lines.join("\n");
+  }
+
+  function renderIdentityResult(data) {
+    if (!data?.ok && data?.result) {
+      return [`Status: ${data.result.status || "-"}`, `Message: ${data.result.message || "-"}`].join("\n");
+    }
+    const lines = [`Route: ${routeLine(data)}`];
+    (data?.records || []).forEach((record) => {
+      if (record.value) {
+        lines.push(`${record.did} ${record.label}: ${record.value}`);
+      } else if (record.nrcName) {
+        lines.push(`${record.did} ${record.label}: ${record.nrcName}`);
+      }
+    });
+    lines.push(`Positive: ${data?.positiveResponseCount ?? 0}`);
+    return lines.join("\n");
+  }
+
+  function renderDtcResult(data) {
+    const lines = [
+      `Status: ${data?.result?.status || "-"}`,
+      `Route: ${routeLine(data)}`,
+    ];
+    if (!data?.result?.ok) {
+      lines.push(`Message: ${data?.result?.message || "-"}`);
+      return lines.join("\n");
+    }
+    const dtc = data?.dtc || {};
+    const records = dtc.records || [];
+    if (!records.length) {
+      lines.push("DTC: none");
+      return lines.join("\n");
+    }
+    records.forEach((record) => {
+      const status = [record.statusHex, record.odisFaultType].filter(Boolean).join(" ");
+      lines.push(`${record.rawDtcHex} ${status}`);
+    });
+    return lines.join("\n");
+  }
+
+  function normalizeDidHex(value) {
+    const raw = String(value || "").replace(/^0x/i, "").replace(/[^0-9a-f]/gi, "");
+    if (!raw) return "";
+    return `0x${raw.padStart(4, "0").toUpperCase()}`;
+  }
+
+  function cleanMwbLabel(value) {
+    return String(value || "")
+      .replace(/_/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function hexBytes(value) {
+    return String(value || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => Number.parseInt(part, 16))
+      .filter((part) => Number.isFinite(part) && part >= 0 && part <= 255);
+  }
+
+  function loadGen5MwbManifest() {
+    if (!gen5MwbManifestPromise) {
+      gen5MwbManifestPromise = fetchJson(gen5MwbManifestPath);
+    }
+    return gen5MwbManifestPromise;
+  }
+
+  function manifestDids(manifest) {
+    const seen = new Set();
+    const dids = [];
+    (manifest?.records || []).forEach((record) => {
+      const did = normalizeDidHex(record.didHex);
+      if (did && !seen.has(did)) {
+        seen.add(did);
+        dids.push(did);
+      }
+    });
+    return dids;
+  }
+
+  function readSignalRaw(bytes, record) {
+    const offset = Number(record?.offset ?? 0);
+    const length = Number(record?.length ?? 0);
+    if (!Number.isInteger(offset) || !Number.isInteger(length) || offset < 0 || length <= 0) {
+      return { ok: false, message: "invalid decode" };
+    }
+    if (offset + length > bytes.length) {
+      return { ok: false, message: "short response" };
+    }
+
+    const signalBytes = bytes.slice(offset, offset + length);
+    if (length > 6) {
+      return { ok: true, raw: null, rawHex: signalBytes.map((byte) => byte.toString(16).padStart(2, "0").toUpperCase()).join(" ") };
+    }
+
+    let raw = 0;
+    const little = String(record?.byteOrder || "").toLowerCase() === "little";
+    if (little) {
+      for (let i = length - 1; i >= 0; i--) raw = raw * 256 + signalBytes[i];
+    } else {
+      for (let i = 0; i < length; i++) raw = raw * 256 + signalBytes[i];
+    }
+
+    const bitLength = Number(record?.bitLength ?? length * 8);
+    const bitPosition = Number(record?.bitPosition ?? 0);
+    if (Number.isInteger(bitLength) && bitLength > 0 && bitLength < length * 8) {
+      raw = Math.floor(raw / 2 ** bitPosition) & ((2 ** bitLength) - 1);
+    }
+
+    if (record?.signed) {
+      const width = Number.isInteger(bitLength) && bitLength > 0 ? bitLength : length * 8;
+      const sign = 2 ** (width - 1);
+      if (raw >= sign) raw -= 2 ** width;
+    }
+
+    return { ok: true, raw, rawHex: signalBytes.map((byte) => byte.toString(16).padStart(2, "0").toUpperCase()).join(" ") };
+  }
+
+  function signalValidity(record, raw) {
+    if (!Array.isArray(record?.validity) || raw === null || raw === undefined) return null;
+    return record.validity.find((entry) => {
+      const lower = Number(entry?.lower);
+      const upper = Number(entry?.upper);
+      return Number.isFinite(lower) && Number.isFinite(upper) && raw >= lower && raw <= upper;
+    }) || null;
+  }
+
+  function formatDecodedSignal(record, bytes) {
+    const rawResult = readSignalRaw(bytes, record);
+    if (!rawResult.ok) return rawResult.message;
+    if (rawResult.raw === null) return rawResult.rawHex || "-";
+
+    const validity = signalValidity(record, rawResult.raw);
+    if (validity && validity.validity && validity.validity !== "VALID") {
+      return `${validity.label || validity.validity} (raw ${rawResult.raw})`;
+    }
+
+    const scale = Number(record?.scale);
+    const add = Number(record?.add);
+    const scaled = rawResult.raw * (Number.isFinite(scale) ? scale : 1) + (Number.isFinite(add) ? add : 0);
+    const precision = Number(record?.precision);
+    const value = Number.isFinite(precision) ? scaled.toFixed(precision) : String(scaled);
+    const unit = record?.unit ? ` ${record.unit}` : "";
+    const validityLabel = validity?.label && validity.label !== record?.signalLabel ? ` (${cleanMwbLabel(validity.label)})` : "";
+    return `${value}${unit}${validityLabel}`;
+  }
+
+  function renderDecodedMeasuredResult(data, manifest) {
+    const rowsByDid = new Map();
+    (data?.items || []).forEach((item) => rowsByDid.set(normalizeDidHex(item.did || item.id), item));
+
+    const lines = [
+      `Profile: ${manifest?.profile?.ecuVariant || "-"}`,
+      `Transport: ${udsProtocolLabel({ transport: data?.transport || data?.uds?.transport })}`,
+      `Positive: ${data?.positiveResponseCount ?? 0}/${data?.itemCount ?? 0}`,
+    ];
+
+    (manifest?.records || []).forEach((record) => {
+      const did = normalizeDidHex(record.didHex);
+      const item = rowsByDid.get(did);
+      const label = cleanMwbLabel(record.label || record.signalLabel || did);
+      if (!item) {
+        lines.push(`${label}: no response`);
+        return;
+      }
+      if (!item.ok) {
+        const detail = [item.status, item.nrcName, item.message].filter(Boolean).join(" ");
+        lines.push(`${label}: ${detail || "failed"}`);
+        return;
+      }
+      lines.push(`${label}: ${formatDecodedSignal(record, hexBytes(item.rawDataHex))}`);
+    });
+
+    return lines.join("\n");
+  }
+
+  function renderMeasuredResult(data, manifest = null) {
+    if (manifest?.records?.length) {
+      return renderDecodedMeasuredResult(data, manifest);
+    }
+
+    const lines = [
+      `Transport: ${udsProtocolLabel({ transport: data?.transport || data?.uds?.transport })}`,
+      `Kind: ${data?.requestKind || "-"}`,
+      `Positive: ${data?.positiveResponseCount ?? 0}/${data?.itemCount ?? 0}`,
+    ];
+    if (data?.status) lines.push(`Status: ${data.status}`);
+    if (data?.message) lines.push(`Message: ${data.message}`);
+
+    const items = data?.items || [];
+    items.forEach((item) => {
+      const id = item.did || item.localIdentifier || item.id || "?";
+      if (item.ok) {
+        lines.push(`${id}: ${item.rawDataHex || item.value || item.responseHex || "-"}`);
+        return;
+      }
+      const detail = [item.status, item.nrcName, item.message].filter(Boolean).join(" ");
+      lines.push(`${id}: ${detail || "failed"}`);
+      if (item.responseHex) lines.push(`${id} response: ${item.responseHex}`);
+    });
+
+    return lines.join("\n");
+  }
+
+  async function runGen5MeasuredValues() {
+    setUdsBusy(true);
+    writeUdsOutput("Loading manifest...");
+    try {
+      const manifest = await loadGen5MwbManifest();
+      const dids = manifestDids(manifest);
+      if (!dids.length) throw new Error("No Gen 5 measured-value DIDs in manifest");
+
+      writeUdsOutput("Running...");
+      const data = await fetchJson(`/api/diag/measured?dids=${encodeURIComponent(dids.join(","))}`, { method: "POST" });
+      writeUdsOutput(renderMeasuredResult(data, manifest));
+      try {
+        const status = await fetchJson("/api/uds/status");
+        renderUdsStatus(status);
+      } catch (_) {}
+    } catch (error) {
+      writeUdsOutput(error.message || "Measured-value request failed");
+    } finally {
+      setUdsBusy(false);
+    }
+  }
+
+  function renderClearDtcResult(data) {
+    const lines = [
+      `Status: ${data?.result?.status || data?.status || "-"}`,
+      `Transport: ${udsProtocolLabel({ transport: data?.transport || data?.uds?.transport })}`,
+      `Route: ${routeLine(data)}`,
+      `Group: ${data?.groupOfDTC || "FF FF FF"}`,
+    ];
+    if (data?.result?.ok) {
+      lines.push("DTC clear request accepted");
+    } else {
+      lines.push(`Message: ${data?.result?.message || data?.message || "-"}`);
+    }
+    if (data?.result?.responseHex) lines.push(`Response: ${data.result.responseHex}`);
+    return lines.join("\n");
+  }
+
+  async function runUdsAction(path, renderer) {
+    setUdsBusy(true);
+    writeUdsOutput("Running...");
+    try {
+      const data = await fetchJson(path, { method: "POST" });
+      writeUdsOutput(renderer(data));
+      try {
+        const status = await fetchJson("/api/uds/status");
+        renderUdsStatus(status);
+      } catch (_) {}
+    } catch (error) {
+      writeUdsOutput(error.message || "Diagnostic request failed");
+    } finally {
+      setUdsBusy(false);
+    }
+  }
+
   function fmtUptime(ms) {
     if (!ms && ms !== 0) return "-";
     const sec = Math.floor(ms / 1000);
@@ -4600,6 +4929,8 @@ function initDiagPage() {
         : '<span class="pill good">OK</span>';
       el("lastChassis").textContent = fmtMs(can.lastChassisMs);
       el("lastHaldex").textContent = fmtMs(can.lastHaldexMs);
+
+      renderUdsStatus(data.uds || {});
 
       const power = data.power || {};
       el("powerSleepEnabled").innerHTML = pill(power.lowPowerSleepEnabled);
@@ -4645,6 +4976,43 @@ function initDiagPage() {
     } catch (e) {
       statusEl.textContent = "Status fetch failed: " + e.message;
     }
+  }
+
+  const probeBtn = el("udsProbeBtn");
+  const identityBtn = el("udsIdentityBtn");
+  const dtcBtn = el("udsDtcBtn");
+  const measuredBtn = el("udsMeasuredBtn");
+  const clearDtcBtn = el("udsClearDtcBtn");
+  if (probeBtn) probeBtn.addEventListener("click", () => runUdsAction("/api/uds/probe", renderProbeResult));
+  if (identityBtn) identityBtn.addEventListener("click", () => runUdsAction("/api/uds/identity", renderIdentityResult));
+  if (dtcBtn) dtcBtn.addEventListener("click", () => runUdsAction("/api/uds/dtc", renderDtcResult));
+  if (measuredBtn) {
+    measuredBtn.addEventListener("click", () => {
+      const generation = Number(el("haldexGen")?.textContent || 0);
+      const gen5 = generation === 5;
+      if (gen5) {
+        runGen5MeasuredValues();
+        return;
+      }
+      const label = gen5 ? "UDS DIDs" : "KWP local IDs";
+      const entered = window.prompt(label, gen5 ? "" : "01,02,03,04");
+      if (entered === null) return;
+      const ids = entered.trim();
+      if (!ids) {
+        writeUdsOutput(`${label}: required`);
+        return;
+      }
+      const param = gen5 ? "dids" : "ids";
+      runUdsAction(`/api/diag/measured?${param}=${encodeURIComponent(ids)}`, renderMeasuredResult);
+    });
+  }
+  if (clearDtcBtn) {
+    clearDtcBtn.addEventListener("click", () => {
+      const confirmed = window.confirm("Clear Haldex DTCs for the selected generation?");
+      if (confirmed) {
+        runUdsAction("/api/uds/clear-dtc", renderClearDtcResult);
+      }
+    });
   }
 
   poll();

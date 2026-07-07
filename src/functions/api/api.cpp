@@ -4,6 +4,7 @@
 #include <ESPAsyncWebServer.h>
 #include <math.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "functions/api/api.h"
 #include "functions/core/state.h"
@@ -15,6 +16,7 @@
 #include "functions/net/update.h"
 #include "functions/tasks/tasks.h"
 #include "functions/power/power.h"
+#include "functions/diag/uds.h"
 
 extern bool wifiInternetOk();
 extern void wifiApplySettings();
@@ -368,6 +370,251 @@ static void applyRuntimeMode(openhaldex_mode_t mode) {
   disableController = (mode == MODE_STOCK);
   lastMode = (uint8_t)mode;
 }
+
+static String apiHexByte(uint8_t value) {
+  String out;
+  if (value < 0x10) {
+    out += "0";
+  }
+  out += String(value, HEX);
+  out.toUpperCase();
+  return out;
+}
+
+static String apiHexWord(uint16_t value) {
+  String out = "0x";
+  String hex = String(value, HEX);
+  hex.toUpperCase();
+  while (hex.length() < 4) {
+    hex = "0" + hex;
+  }
+  out += hex;
+  return out;
+}
+
+static String apiBytesHex(const uint8_t* data, uint16_t len) {
+  String out;
+  out.reserve((size_t)len * 3);
+  for (uint16_t i = 0; i < len; i++) {
+    if (i > 0) {
+      out += " ";
+    }
+    out += apiHexByte(data[i]);
+  }
+  return out;
+}
+
+static bool parseHexU32(const String& raw, uint32_t& out) {
+  String text = raw;
+  text.trim();
+  if (text.startsWith("0x") || text.startsWith("0X")) {
+    text = text.substring(2);
+  }
+  text.replace(" ", "");
+  text.replace("_", "");
+  if (text.length() == 0 || text.length() > 8) {
+    return false;
+  }
+  for (uint16_t i = 0; i < text.length(); i++) {
+    if (!isxdigit((unsigned char)text[i])) {
+      return false;
+    }
+  }
+  out = strtoul(text.c_str(), nullptr, 16);
+  return true;
+}
+
+static bool parseHexU16Json(JsonDocument& doc, const char* key, uint16_t& out) {
+  JsonVariant v = doc[key];
+  if (v.isNull()) {
+    return false;
+  }
+  if (v.is<int32_t>() || v.is<uint32_t>()) {
+    int32_t value = v.as<int32_t>();
+    if (value < 0 || value > 0xFFFF) {
+      return false;
+    }
+    out = (uint16_t)value;
+    return true;
+  }
+  uint32_t parsed = 0;
+  if (!parseHexU32(String(v.as<const char*>() ? v.as<const char*>() : ""), parsed) || parsed > 0xFFFF) {
+    return false;
+  }
+  out = (uint16_t)parsed;
+  return true;
+}
+
+static String decodeUdsDataValue(const uint8_t* data, uint16_t len, bool prefer_ascii) {
+  if (len == 0) {
+    return "";
+  }
+
+  uint16_t printable = 0;
+  for (uint16_t i = 0; i < len; i++) {
+    if (data[i] == 0 || (data[i] >= 0x20 && data[i] <= 0x7E)) {
+      printable++;
+    }
+  }
+  const bool ascii_like = prefer_ascii && printable >= ((uint16_t)len * 3U) / 4U;
+  if (!ascii_like) {
+    return apiBytesHex(data, len);
+  }
+
+  String out;
+  out.reserve(len);
+  for (uint16_t i = 0; i < len; i++) {
+    if (data[i] != 0) {
+      out += (char)data[i];
+    }
+  }
+  out.trim();
+  return out;
+}
+
+static bool udsDidResponseData(const diag_uds_result_t& result, uint16_t did, const uint8_t*& data,
+                               uint16_t& len) {
+  if (!result.ok || result.payloadLen < 3 || result.payload[0] != 0x62 ||
+      result.payload[1] != (uint8_t)(did >> 8) || result.payload[2] != (uint8_t)(did & 0xFF)) {
+    data = nullptr;
+    len = 0;
+    return false;
+  }
+  data = &result.payload[3];
+  len = result.payloadLen - 3;
+  return true;
+}
+
+static bool kwpLocalIdentifierResponseData(const diag_uds_result_t& result, uint8_t local_id, const uint8_t*& data,
+                                           uint16_t& len) {
+  if (!result.ok || result.payloadLen < 2 || result.payload[0] != 0x61 || result.payload[1] != local_id) {
+    data = nullptr;
+    len = 0;
+    return false;
+  }
+  data = &result.payload[2];
+  len = result.payloadLen - 2;
+  return true;
+}
+
+static bool parseHexList(const String& raw, uint32_t max_value, uint32_t* values, uint8_t& count,
+                         uint8_t max_count) {
+  count = 0;
+  String text = raw;
+  text.replace(";", ",");
+  text.replace("\r", ",");
+  text.replace("\n", ",");
+  text.replace("\t", ",");
+
+  int start = 0;
+  while (start <= (int)text.length()) {
+    int comma = text.indexOf(',', start);
+    if (comma < 0) {
+      comma = text.length();
+    }
+
+    String token = text.substring(start, comma);
+    token.trim();
+    if (token.length() > 0) {
+      if (count >= max_count) {
+        return false;
+      }
+      uint32_t parsed = 0;
+      if (!parseHexU32(token, parsed) || parsed > max_value) {
+        return false;
+      }
+      values[count++] = parsed;
+    }
+
+    if (comma >= (int)text.length()) {
+      break;
+    }
+    start = comma + 1;
+  }
+
+  return count > 0;
+}
+
+static void writeUdsDtcStatusLabels(JsonArray labels, uint8_t status) {
+  if (status & 0x01) labels.add("testFailed");
+  if (status & 0x02) labels.add("testFailedThisOperationCycle");
+  if (status & 0x04) labels.add("pendingDTC");
+  if (status & 0x08) labels.add("confirmedDTC");
+  if (status & 0x10) labels.add("testNotCompletedSinceLastClear");
+  if (status & 0x20) labels.add("testFailedSinceLastClear");
+  if (status & 0x40) labels.add("testNotCompletedThisOperationCycle");
+  if (status & 0x80) labels.add("warningIndicatorRequested");
+}
+
+static const char* udsDtcOdisFaultType(uint8_t status) {
+  if (status & 0x01) {
+    return "active/static";
+  }
+  if (status & 0x08) {
+    return "passive/sporadic";
+  }
+  if (status & 0x04) {
+    return "pending";
+  }
+  return "";
+}
+
+static void parseUdsDtcPayload(JsonObject out, const diag_uds_result_t& result) {
+  out["parsed"] = false;
+  if (!result.ok || result.payloadLen < 3 || result.payload[0] != 0x59) {
+    return;
+  }
+
+  out["parsed"] = true;
+  out["reportType"] = apiHexByte(result.payload[1]);
+  out["statusAvailabilityMask"] = apiHexByte(result.payload[2]);
+
+  JsonArray records = out["records"].to<JsonArray>();
+  if (result.payload[1] != 0x02 || result.payloadLen < 7) {
+    out["dtcCount"] = 0;
+    return;
+  }
+
+  uint16_t count = 0;
+  for (uint16_t offset = 3; offset + 3 < result.payloadLen; offset += 4) {
+    const uint8_t* dtc = &result.payload[offset];
+    const uint8_t status = result.payload[offset + 3];
+    if (dtc[0] == 0 && dtc[1] == 0 && dtc[2] == 0) {
+      continue;
+    }
+    JsonObject row = records.add<JsonObject>();
+    row["rawDtcHex"] = apiHexByte(dtc[0]) + apiHexByte(dtc[1]) + apiHexByte(dtc[2]);
+    row["rawDtcSpaced"] = apiBytesHex(dtc, 3);
+    row["statusHex"] = apiHexByte(status);
+    row["statusByte"] = status;
+    row["odisFaultType"] = udsDtcOdisFaultType(status);
+    JsonArray labels = row["statusLabels"].to<JsonArray>();
+    writeUdsDtcStatusLabels(labels, status);
+    count++;
+  }
+  out["dtcCount"] = count;
+}
+
+struct uds_identity_did_t {
+  uint16_t did;
+  const char* label;
+  const char* field;
+  bool ascii;
+};
+
+static const uds_identity_did_t k_uds_identity_dids[] = {
+  {0xF19E, "ASAM/ODX File Identifier", "asamOdxFileIdentifier", true},
+  {0xF1A2, "ASAM/ODX File Version", "asamOdxFileVersion", true},
+  {0xF187, "VW Spare Part Number", "partNumber", true},
+  {0xF189, "VW Application Software Version Number", "softwareVersion", true},
+  {0xF18A, "System Supplier Identifier", "systemSupplierIdentifier", true},
+  {0xF190, "VIN Vehicle Identification Number", "vin", true},
+  {0xF191, "VW ECU Hardware Number", "hardwareNumber", true},
+  {0xF1A3, "VW ECU Hardware Version Number", "hardwareVersion", true},
+  {0xF1A0, "VW Data Set Number", "dataSetNumber", true},
+  {0xF1A1, "VW Data Set Version", "dataSetVersion", true},
+};
+
 // Aggregated status endpoint used by Home and Diagnostics pages.
 static void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
@@ -407,6 +654,9 @@ static void handleStatus(AsyncWebServerRequest* request) {
 
   JsonObject power = doc["power"].to<JsonObject>();
   powerWriteStatusJson(power);
+
+  JsonObject uds = doc["uds"].to<JsonObject>();
+  diagUdsWriteStatusJson(uds);
 
   JsonObject telemetry = doc["telemetry"].to<JsonObject>();
   telemetry["speed"] = received_vehicle_speed;
@@ -1850,10 +2100,395 @@ static void handleCanviewDump(AsyncWebServerRequest* request) {
   request->send(response);
 }
 
+static void writeUdsEnvelope(JsonDocument& doc, const diag_uds_result_t& result, bool ok) {
+  doc["ok"] = ok;
+  doc["haldexGeneration"] = haldexGeneration;
+  JsonObject resultObj = doc["result"].to<JsonObject>();
+  diagUdsWriteResultJson(resultObj, result);
+  JsonObject uds = doc["uds"].to<JsonObject>();
+  diagUdsWriteStatusJson(uds);
+}
+
+static void handleUdsStatus(AsyncWebServerRequest* request) {
+  JsonDocument doc;
+  JsonObject root = doc.to<JsonObject>();
+  diagUdsWriteStatusJson(root);
+  sendJson(request, 200, doc);
+}
+
+static void handleUdsProbe(AsyncWebServerRequest* request) {
+  diag_uds_result_t result = {};
+  const bool ok = diagUdsProbeHaldex(result, 900);
+  JsonDocument doc;
+  writeUdsEnvelope(doc, result, ok);
+
+  const uint8_t* data = nullptr;
+  uint16_t len = 0;
+  if (udsDidResponseData(result, 0xF19E, data, len)) {
+    doc["asamOdxFileIdentifier"] = decodeUdsDataValue(data, len, true);
+  }
+  sendJson(request, 200, doc);
+}
+
+static void handleUdsReadDid(AsyncWebServerRequest* request) {
+  if (!request->hasParam("did")) {
+    sendError(request, 400, "did query parameter required");
+    return;
+  }
+
+  uint32_t parsed = 0;
+  if (!parseHexU32(request->getParam("did")->value(), parsed) || parsed > 0xFFFF) {
+    sendError(request, 400, "invalid did");
+    return;
+  }
+
+  const uint16_t did = (uint16_t)parsed;
+  diag_uds_result_t result = {};
+  const bool ok = diagUdsReadDataByIdentifier(did, result, 1500);
+  JsonDocument doc;
+  writeUdsEnvelope(doc, result, ok);
+  doc["did"] = apiHexWord(did);
+
+  const uint8_t* data = nullptr;
+  uint16_t len = 0;
+  if (udsDidResponseData(result, did, data, len)) {
+    doc["rawDataHex"] = apiBytesHex(data, len);
+    doc["value"] = decodeUdsDataValue(data, len, true);
+  }
+  sendJson(request, 200, doc);
+}
+
+static void handleUdsReadDidJson(AsyncWebServerRequest* request, const String& body) {
+  JsonDocument in;
+  DeserializationError err = deserializeJson(in, body);
+  if (err) {
+    sendError(request, 400, "invalid json");
+    return;
+  }
+
+  uint16_t did = 0;
+  if (!parseHexU16Json(in, "did", did) && !parseHexU16Json(in, "dataIdentifier", did)) {
+    sendError(request, 400, "invalid did");
+    return;
+  }
+
+  diag_uds_result_t result = {};
+  const bool ok = diagUdsReadDataByIdentifier(did, result, 1500);
+  JsonDocument doc;
+  writeUdsEnvelope(doc, result, ok);
+  doc["did"] = apiHexWord(did);
+
+  const uint8_t* data = nullptr;
+  uint16_t len = 0;
+  if (udsDidResponseData(result, did, data, len)) {
+    doc["rawDataHex"] = apiBytesHex(data, len);
+    doc["value"] = decodeUdsDataValue(data, len, true);
+  }
+  sendJson(request, 200, doc);
+}
+
+static void handleUdsIdentity(AsyncWebServerRequest* request) {
+  JsonDocument doc;
+  doc["ok"] = false;
+  doc["haldexGeneration"] = haldexGeneration;
+
+  if (!diagUdsHasSelectedRoute()) {
+    diag_uds_result_t probe = {};
+    if (!diagUdsProbeHaldex(probe, 900)) {
+      JsonObject resultObj = doc["result"].to<JsonObject>();
+      diagUdsWriteResultJson(resultObj, probe);
+      JsonObject uds = doc["uds"].to<JsonObject>();
+      diagUdsWriteStatusJson(uds);
+      sendJson(request, 200, doc);
+      return;
+    }
+  }
+
+  JsonArray records = doc["records"].to<JsonArray>();
+  uint16_t positive_count = 0;
+  uint16_t meaningful_count = 0;
+
+  for (uint8_t i = 0; i < sizeof(k_uds_identity_dids) / sizeof(k_uds_identity_dids[0]); i++) {
+    const uds_identity_did_t& item = k_uds_identity_dids[i];
+    diag_uds_result_t result = {};
+    const bool ok = diagUdsReadDataByIdentifier(item.did, result, 1500);
+
+    JsonObject row = records.add<JsonObject>();
+    row["did"] = apiHexWord(item.did);
+    row["label"] = item.label;
+    row["field"] = item.field;
+    row["ok"] = ok;
+
+    const uint8_t* data = nullptr;
+    uint16_t len = 0;
+    if (udsDidResponseData(result, item.did, data, len)) {
+      const String value = decodeUdsDataValue(data, len, item.ascii);
+      row["value"] = value;
+      row["rawDataHex"] = apiBytesHex(data, len);
+      positive_count++;
+      if (value.length() > 0) {
+        meaningful_count++;
+        doc[item.field] = value;
+      }
+    } else {
+      row["status"] = result.status ? result.status : "";
+      row["message"] = result.message ? result.message : "";
+      if (result.negative) {
+        row["nrc"] = apiHexByte(result.nrc);
+        row["nrcName"] = diagUdsNrcName(result.nrc);
+      }
+    }
+
+    if (result.timeout || result.busy) {
+      JsonObject resultObj = doc["lastResult"].to<JsonObject>();
+      diagUdsWriteResultJson(resultObj, result);
+      break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+
+  doc["ok"] = positive_count > 0;
+  doc["positiveResponseCount"] = positive_count;
+  doc["meaningfulPositiveResponseCount"] = meaningful_count;
+  JsonObject uds = doc["uds"].to<JsonObject>();
+  diagUdsWriteStatusJson(uds);
+  sendJson(request, 200, doc);
+}
+
+static void handleUdsDtc(AsyncWebServerRequest* request) {
+  uint8_t status_mask = 0xAF;
+  if (request->hasParam("statusMask")) {
+    uint32_t parsed = 0;
+    if (!parseHexU32(request->getParam("statusMask")->value(), parsed) || parsed > 0xFF) {
+      sendError(request, 400, "invalid statusMask");
+      return;
+    }
+    status_mask = (uint8_t)parsed;
+  }
+
+  diag_uds_result_t result = {};
+  const bool ok = diagUdsReadDtcByStatus(status_mask, result, 3000);
+  JsonDocument doc;
+  writeUdsEnvelope(doc, result, ok);
+  doc["statusMask"] = apiHexByte(status_mask);
+  JsonObject parsed = doc["dtc"].to<JsonObject>();
+  parseUdsDtcPayload(parsed, result);
+  sendJson(request, 200, doc);
+}
+
+static void handleMeasuredValues(AsyncWebServerRequest* request) {
+  static const uint8_t k_max_items = 16;
+  uint32_t ids[k_max_items] = {};
+  uint8_t id_count = 0;
+
+  JsonDocument doc;
+  doc["haldexGeneration"] = haldexGeneration;
+  JsonArray items = doc["items"].to<JsonArray>();
+
+  if (haldexGeneration == 5) {
+    String raw_ids = "";
+    if (request->hasParam("dids")) {
+      raw_ids = request->getParam("dids")->value();
+    } else if (request->hasParam("ids")) {
+      raw_ids = request->getParam("ids")->value();
+    }
+
+    if (raw_ids.length() == 0) {
+      doc["ok"] = false;
+      doc["transport"] = "uds_can";
+      doc["requestKind"] = "did";
+      doc["status"] = "did_required";
+      doc["message"] = "Pass dids=... from the VDCore measured-value catalog";
+      JsonObject uds = doc["uds"].to<JsonObject>();
+      diagUdsWriteStatusJson(uds);
+      sendJson(request, 200, doc);
+      return;
+    }
+
+    if (!parseHexList(raw_ids, 0xFFFF, ids, id_count, k_max_items)) {
+      sendError(request, 400, "invalid did list");
+      return;
+    }
+
+    uint8_t positive_count = 0;
+    for (uint8_t i = 0; i < id_count; i++) {
+      const uint16_t did = (uint16_t)ids[i];
+      diag_uds_result_t result = {};
+      const bool ok = diagUdsReadDataByIdentifier(did, result, 1500);
+
+      JsonObject row = items.add<JsonObject>();
+      row["id"] = apiHexWord(did);
+      row["did"] = apiHexWord(did);
+      row["ok"] = ok;
+      row["status"] = result.status ? result.status : "";
+      row["message"] = result.message ? result.message : "";
+
+      const uint8_t* data = nullptr;
+      uint16_t len = 0;
+      if (udsDidResponseData(result, did, data, len)) {
+        row["rawDataHex"] = apiBytesHex(data, len);
+        row["value"] = decodeUdsDataValue(data, len, false);
+        positive_count++;
+      }
+      if (result.payloadLen > 0) {
+        row["responseHex"] = apiBytesHex(result.payload, result.payloadLen);
+      }
+      if (result.negative) {
+        row["nrc"] = apiHexByte(result.nrc);
+        row["nrcName"] = diagUdsNrcName(result.nrc);
+      }
+
+      if (result.timeout || result.busy) {
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    doc["ok"] = positive_count > 0;
+    doc["transport"] = "uds_can";
+    doc["requestKind"] = "did";
+    doc["itemCount"] = id_count;
+    doc["positiveResponseCount"] = positive_count;
+    JsonObject uds = doc["uds"].to<JsonObject>();
+    diagUdsWriteStatusJson(uds);
+    sendJson(request, 200, doc);
+    return;
+  }
+
+  if (haldexGeneration == 2 || haldexGeneration == 4) {
+    String raw_ids = "01,02,03,04";
+    if (request->hasParam("localIds")) {
+      raw_ids = request->getParam("localIds")->value();
+    } else if (request->hasParam("ids")) {
+      raw_ids = request->getParam("ids")->value();
+    }
+
+    if (!parseHexList(raw_ids, 0xFF, ids, id_count, k_max_items)) {
+      sendError(request, 400, "invalid local id list");
+      return;
+    }
+
+    uint8_t positive_count = 0;
+    for (uint8_t i = 0; i < id_count; i++) {
+      const uint8_t local_id = (uint8_t)ids[i];
+      diag_uds_result_t result = {};
+      const bool ok = diagKwpTp20ReadLocalIdentifier(local_id, result, 5000);
+
+      JsonObject row = items.add<JsonObject>();
+      row["id"] = apiHexByte(local_id);
+      row["localIdentifier"] = apiHexByte(local_id);
+      row["ok"] = ok;
+      row["status"] = result.status ? result.status : "";
+      row["message"] = result.message ? result.message : "";
+
+      const uint8_t* data = nullptr;
+      uint16_t len = 0;
+      if (kwpLocalIdentifierResponseData(result, local_id, data, len)) {
+        row["rawDataHex"] = apiBytesHex(data, len);
+        row["value"] = decodeUdsDataValue(data, len, false);
+        positive_count++;
+      }
+      if (result.payloadLen > 0) {
+        row["responseHex"] = apiBytesHex(result.payload, result.payloadLen);
+      }
+      if (result.negative) {
+        row["nrc"] = apiHexByte(result.nrc);
+        row["nrcName"] = diagUdsNrcName(result.nrc);
+      }
+
+      if (result.timeout || result.busy) {
+        break;
+      }
+      vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    doc["ok"] = positive_count > 0;
+    doc["transport"] = "kwp_tp20";
+    doc["requestKind"] = "localIdentifier";
+    doc["itemCount"] = id_count;
+    doc["positiveResponseCount"] = positive_count;
+    JsonObject uds = doc["uds"].to<JsonObject>();
+    diagUdsWriteStatusJson(uds);
+    sendJson(request, 200, doc);
+    return;
+  }
+
+  doc["ok"] = false;
+  doc["transport"] = "";
+  doc["requestKind"] = "";
+  doc["status"] = "unsupported_generation";
+  doc["message"] = "Measured values support Gen 2/4 KWP2000 TP20 and Gen 5 UDS Haldex modules";
+  JsonObject uds = doc["uds"].to<JsonObject>();
+  diagUdsWriteStatusJson(uds);
+  sendJson(request, 200, doc);
+}
+
+static void handleUdsClearDtc(AsyncWebServerRequest* request) {
+  uint32_t group_of_dtc = 0xFFFFFFUL;
+  if (request->hasParam("groupOfDTC")) {
+    uint32_t parsed = 0;
+    if (!parseHexU32(request->getParam("groupOfDTC")->value(), parsed) || parsed > 0xFFFFFFUL) {
+      sendError(request, 400, "invalid groupOfDTC");
+      return;
+    }
+    group_of_dtc = parsed;
+  }
+
+  diag_uds_result_t result = {};
+  bool ok = false;
+  const char* transport = "";
+  if (haldexGeneration == 5) {
+    transport = "uds_can";
+    ok = diagUdsClearDtc(group_of_dtc, result, 3000);
+  } else if (haldexGeneration == 2 || haldexGeneration == 4) {
+    transport = "kwp_tp20";
+    ok = diagKwpTp20ClearDtc(group_of_dtc, result, 5000);
+  } else {
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["haldexGeneration"] = haldexGeneration;
+    doc["transport"] = "";
+    doc["status"] = "unsupported_generation";
+    doc["message"] = "Clear DTC supports Gen 2/4 KWP2000 TP20 and Gen 5 UDS Haldex modules";
+    JsonObject uds = doc["uds"].to<JsonObject>();
+    diagUdsWriteStatusJson(uds);
+    sendJson(request, 200, doc);
+    return;
+  }
+
+  const uint8_t group_bytes[] = {
+    (uint8_t)((group_of_dtc >> 16) & 0xFF),
+    (uint8_t)((group_of_dtc >> 8) & 0xFF),
+    (uint8_t)(group_of_dtc & 0xFF),
+  };
+
+  JsonDocument doc;
+  writeUdsEnvelope(doc, result, ok);
+  doc["transport"] = transport;
+  doc["groupOfDTC"] = apiBytesHex(group_bytes, sizeof(group_bytes));
+  sendJson(request, 200, doc);
+}
+
 void setupApi(AsyncWebServer& server) {
   ensureDefaults();
 
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request) { handleStatus(request); });
+  server.on("/api/uds/status", HTTP_GET, [](AsyncWebServerRequest* request) { handleUdsStatus(request); });
+  server.on("/api/uds/probe", HTTP_POST, [](AsyncWebServerRequest* request) { handleUdsProbe(request); });
+  server.on("/api/uds/read", HTTP_GET, [](AsyncWebServerRequest* request) { handleUdsReadDid(request); });
+  server.on(
+    "/api/uds/read", HTTP_POST, [](AsyncWebServerRequest* request) { (void)request; }, nullptr,
+    [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+      onJsonBody(request, data, len, index, total, handleUdsReadDidJson);
+    });
+  server.on("/api/uds/identity", HTTP_POST, [](AsyncWebServerRequest* request) { handleUdsIdentity(request); });
+  server.on("/api/uds/dtc", HTTP_GET, [](AsyncWebServerRequest* request) { handleUdsDtc(request); });
+  server.on("/api/uds/dtc", HTTP_POST, [](AsyncWebServerRequest* request) { handleUdsDtc(request); });
+  server.on("/api/diag/measured", HTTP_GET, [](AsyncWebServerRequest* request) { handleMeasuredValues(request); });
+  server.on("/api/diag/measured", HTTP_POST, [](AsyncWebServerRequest* request) { handleMeasuredValues(request); });
+  server.on("/api/uds/measured", HTTP_GET, [](AsyncWebServerRequest* request) { handleMeasuredValues(request); });
+  server.on("/api/uds/measured", HTTP_POST, [](AsyncWebServerRequest* request) { handleMeasuredValues(request); });
+  server.on("/api/uds/clear-dtc", HTTP_POST, [](AsyncWebServerRequest* request) { handleUdsClearDtc(request); });
   server.on("/api/learn/status", HTTP_GET, [](AsyncWebServerRequest* request) { handleLearnStatus(request); });
   server.on("/api/learn/start", HTTP_POST, [](AsyncWebServerRequest* request) { handleLearnStart(request); });
   server.on("/api/learn/cancel", HTTP_POST, [](AsyncWebServerRequest* request) { handleLearnCancel(request); });
