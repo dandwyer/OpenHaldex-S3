@@ -82,31 +82,6 @@ Typical hardware cost is under $50 if using the LilyGo board and used OEM connec
 
 The intended installation does not require soldering, splicing factory vehicle wiring, or a proprietary controller harness.
 
-## LilyGO T-2CAN Hardware Facts
-
-The LilyGO T-2CAN is not an unknown or improvised controller board. It is a documented ESP32-S3 dual-CAN development board with Arduino/PlatformIO support, USB-C programming/debugging, and MCP2515 CAN controller hardware. OpenHaldex-S3 uses that hardware because it is inexpensive, available, inspectable, and already suited to this type of CAN gateway/control project.
-
-Common claims about the T-2CAN hardware:
-
-| Claim | OpenHaldex-S3 position |
-|---|---|
-| The LilyGO T-2CAN cannot be used on automotive power. | OpenHaldex-S3 is installed on normal VAG 12 V vehicle power at the Haldex connector and has been validated in real vehicles over thousands of road miles. A severe alternator/load-dump, reverse-battery, dead-battery jump, or wiring fault can damage many vehicle modules and aftermarket controllers; that is not the same as normal 12 V automotive operation. Use the factory fused feed or an appropriate inline fuse and build the harness correctly. |
-| External MCP2515 CAN hardware is a weakness. | MCP2515 is a long-running Microchip stand-alone CAN controller, not an obscure clone part. Microchip lists MCP2515 as in production and recommended for automotive design, and the datasheet specifies CAN 2.0B support up to 1 Mb/s with standard and extended frames. OpenHaldex-S3 uses the ESP32-S3 TWAI controller for chassis CAN and MCP2515 for the Haldex-side CAN channel. |
-| The LilyGO board can cause no-starts, steering faults, or vehicle CAN failures. | A bad harness can cause CAN problems on any controller. The normal OpenHaldex-S3 control path reads chassis CAN, forwards/mutates the required traffic toward the Haldex controller, and does not emulate engine, ABS, steering, or immobilizer modules. Proper wiring, twisted CAN pairs, correct polarity, strain relief, and insulation are installation requirements, not LilyGO-specific defects. |
-| Screw terminals are unsafe by themselves. | Screw terminals do not create CAN faults by existing. Loose, unstrained, untwisted, undersized, or mis-pinned wiring creates CAN faults. Use ferrules or properly prepared wire ends, tighten terminals correctly, tug-test the harness, keep CAN pairs twisted, and enclose/strain-relieve the assembly. |
-| The board lacks an onboard mode LED or external mode button. | OpenHaldex-S3 uses the web UI, saved mode state, and configurable CAN mode trigger instead of requiring extra external controls. Lack of a dedicated LED or button is a feature difference, not evidence that the controller is unsuitable. |
-| The board lacks high-side drivers for brake or handbrake control. | Brake/handbrake output control is a Generation 1-specific feature, not a Gen 2, Gen 4, or Gen 5 requirement. OpenHaldex-S3 does not interrupt brake or handbrake wiring; those wires pass through the harness. Any controller that actually uses brake/handbrake IO still requires the installer to wire and configure those circuits correctly. Extra high-side outputs may be useful for other architectures, but they are not required for the OpenHaldex-S3 inline design. |
-| ESD or over-voltage can damage the board. | ESD, shorts, and abnormal voltage transients can damage many electronic modules, including OEM modules and custom aftermarket PCBs. The practical controls are correct installation, enclosure, strain relief, proper fusing, and avoiding exposed live wiring. This is not evidence that the T-2CAN cannot be used for this application. |
-| The LilyGO board is just another proprietary controller. | The T-2CAN is an off-the-shelf commercial development board. OpenHaldex-S3 firmware, web UI, PlatformIO project, and release metadata are public in this repository, so users can inspect, build, flash, repair, or replace the controller without a locked hardware ecosystem. |
-| No bundled enclosure or JTAG header makes it unsuitable. | A protected enclosure is recommended for any installed controller. The T-2CAN provides USB-C programming/debugging and BOOT/RESET controls; a dedicated JTAG breakout or bundled enclosure is a convenience feature, not a requirement for Haldex control. |
-| The install is still a custom harness and the cost is comparable. | OpenHaldex-S3 uses a simple inline harness built from the factory Haldex connector pair and an off-the-shelf board. The design avoids a proprietary PCB and proprietary controller harness, and typical parts cost remains low when using a T-2CAN and used OEM connectors. |
-
-References:
-
-- LilyGO T-2CAN project documentation: <https://github.com/Xinyuan-LilyGO/T-2Can>
-- Microchip MCP2515 product page: <https://www.microchip.com/en-us/product/mcp2515>
-- MCP2515 datasheet: <https://ww1.microchip.com/downloads/en/DeviceDoc/MCP2515-Stand-Alone-CAN-Controller-with-SPI-20001801J.pdf>
-
 ## Installation
 
 Basic install:
@@ -159,6 +134,31 @@ After flashing and connecting to the web UI:
 5. Return to **Home** and select a mode.
 
 The generation selector intentionally starts blank on first setup. Saved local/device settings take priority after a generation has been selected.
+
+## LilyGO T-2CAN Hardware Facts
+
+The LilyGO T-2CAN is not an unknown or improvised controller board. It is a documented ESP32-S3 dual-CAN development board with Arduino/PlatformIO support, USB-C programming/debugging, and MCP2515 CAN controller hardware. OpenHaldex-S3 uses that hardware because it is inexpensive, available, inspectable, and already suited to this type of CAN gateway/control project.
+
+Common claims about the T-2CAN hardware:
+
+| Claim | OpenHaldex-S3 position |
+|---|---|
+| The LilyGO T-2CAN cannot be used on automotive power. | OpenHaldex-S3 is installed on normal VAG 12 V vehicle power at the Haldex connector and has been validated in real vehicles over thousands of road miles. A severe alternator/load-dump, reverse-battery, dead-battery jump, or wiring fault can damage many vehicle modules and aftermarket controllers; that is not the same as normal 12 V automotive operation. Use the factory fused feed or an appropriate inline fuse and build the harness correctly. |
+| External MCP2515 CAN hardware is a weakness. | MCP2515 is a long-running Microchip stand-alone CAN controller, not an obscure clone part. Microchip lists MCP2515 as in production and recommended for automotive design, and the datasheet specifies CAN 2.0B support up to 1 Mb/s with standard and extended frames. OpenHaldex-S3 uses the ESP32-S3 TWAI controller for chassis CAN and MCP2515 for the Haldex-side CAN channel. |
+| The LilyGO board can cause no-starts, steering faults, or vehicle CAN failures. | A bad harness can cause CAN problems on any controller. The normal OpenHaldex-S3 control path reads chassis CAN, forwards/mutates the required traffic toward the Haldex controller, and does not emulate engine, ABS, steering, or immobilizer modules. Proper wiring, twisted CAN pairs, correct polarity, strain relief, and insulation are installation requirements, not LilyGO-specific defects. |
+| Screw terminals are unsafe by themselves. | Screw terminals do not create CAN faults by existing. Loose, unstrained, untwisted, undersized, or mis-pinned wiring creates CAN faults. Use ferrules or properly prepared wire ends, tighten terminals correctly, tug-test the harness, keep CAN pairs twisted, and enclose/strain-relieve the assembly. |
+| The board lacks an onboard mode LED or external mode button. | OpenHaldex-S3 uses the web UI, saved mode state, and configurable CAN mode trigger instead of requiring extra external controls. Lack of a dedicated LED or button is a feature difference, not evidence that the controller is unsuitable. |
+| The board lacks high-side drivers for brake or handbrake control. | Brake/handbrake output control is a Generation 1-specific feature, not a Gen 2, Gen 4, or Gen 5 requirement. OpenHaldex-S3 does not interrupt brake or handbrake wiring; those wires pass through the harness. Any controller that actually uses brake/handbrake IO still requires the installer to wire and configure those circuits correctly. Extra high-side outputs may be useful for other architectures, but they are not required for the OpenHaldex-S3 inline design. |
+| ESD or over-voltage can damage the board. | ESD, shorts, and abnormal voltage transients can damage many electronic modules, including OEM modules and custom aftermarket PCBs. The practical controls are correct installation, enclosure, strain relief, proper fusing, and avoiding exposed live wiring. This is not evidence that the T-2CAN cannot be used for this application. |
+| The LilyGO board is just another proprietary controller. | The T-2CAN is an off-the-shelf commercial development board. OpenHaldex-S3 firmware, web UI, PlatformIO project, and release metadata are public in this repository, so users can inspect, build, flash, repair, or replace the controller without a locked hardware ecosystem. |
+| No bundled enclosure or JTAG header makes it unsuitable. | A protected enclosure is recommended for any installed controller. The T-2CAN provides USB-C programming/debugging and BOOT/RESET controls; a dedicated JTAG breakout or bundled enclosure is a convenience feature, not a requirement for Haldex control. |
+| The install is still a custom harness and the cost is comparable. | OpenHaldex-S3 uses a simple inline harness built from the factory Haldex connector pair and an off-the-shelf board. The design avoids a proprietary PCB and proprietary controller harness, and typical parts cost remains low when using a T-2CAN and used OEM connectors. |
+
+References:
+
+- LilyGO T-2CAN project documentation: <https://github.com/Xinyuan-LilyGO/T-2Can>
+- Microchip MCP2515 product page: <https://www.microchip.com/en-us/product/mcp2515>
+- MCP2515 datasheet: <https://ww1.microchip.com/downloads/en/DeviceDoc/MCP2515-Stand-Alone-CAN-Controller-with-SPI-20001801J.pdf>
 
 ## Haldex Diagnostics
 
