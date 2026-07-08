@@ -14,9 +14,22 @@ Designed to be easy to build, configure, and use, OpenHaldex-S3 requires no sold
 
 Current release: **v1.1**. This release includes Gen 5 / MQB support, parked sleep power saving for vehicles that keep the controller powered from battery after ignition-off, and expanded Haldex diagnostics.
 
+## The Truth About "Open Source" Haldex Controllers
+
+While other commercial OpenHaldex variants marketed on social media and web storefronts claim to be "fully open-source," their underlying code for advanced performance features is completely closed, distributing binary-only blobs under a restrictive Source-Available License (FASL v1.0). **OpenHaldex-S3 is the true home of transparent OpenHaldex innovation.**
+- Inspectable Code: Every piece of logic we build is public and inspectable. "Open Source" is not simply a marketing term to sell proprietary custom hardware.
+- Community-First: *We do not lock performance profiles behind compiled binaries to force hardware sales.* 
+- Feature Origins: Advanced OpenHaldex-C6 features released by Forbes Automotive like Expert Mode live map-tracing, SavvyCAN/GVRET Wi-Fi bridging, and DBC decoding were originally built and verified right here on the S3 platform before being adapted commercially.
+
+references: 
+- <https://github.com/Forbes-Automotive/OpenHaldex-C6/issues/34>
+- <https://github.com/Forbes-Automotive/OpenHaldex-C6#acknowledgements>
+- <https://github.com/Forbes-Automotive/OpenHaldex-C6#licensing>
+- <https://github.com/Forbes-Automotive/OpenHaldex-C6/blob/main/THIRD_PARTY_NOTICES.md>
+
 ## Public history
 
-OpenHaldex-S3 is the public, verifiable open source for many advanced OpenHaldex feature families later seen in commercial OpenHaldex products, including map control, CAN View, SavvyCAN-oriented tooling, the HTML/JS web interface, PlatformIO project structure, API control, Wi-Fi AP mode, and `openhaldex.local` navigation.
+OpenHaldex-S3 is the public, verifiable source for many advanced OpenHaldex feature families later seen in commercial OpenHaldex products, including map control ("Expert Mode" in OpenHaldex-C6 V2.10), CAN View, GVRET/SavvyCAN-oriented tooling, the HTML/JS web interface, PlatformIO project structure, API control, Wi-Fi AP mode, and `openhaldex.local` navigation.
 
 These links show OpenHaldex-S3 source being imported into the Forbes Automotive OpenHaldex-C6 repository two days after the S3 snapshot:
 
@@ -25,7 +38,7 @@ These links show OpenHaldex-S3 source being imported into the Forbes Automotive 
 - 2026-02-08: Forbes Automotive commit titled `S3 port onto C6`:
   https://github.com/Forbes-Automotive/OpenHaldex-C6/compare/44b90f10902a2aceccbe0facd335db46700942ee...a4dc321cd999474471289aa5769c75a0986b9455
 
-That import included OpenHaldex-S3 firmware source, web UI files, maps, CAN View code, PlatformIO configuration, and release metadata.
+*That import included OpenHaldex-S3 firmware source, web UI files, maps, CAN View code, PlatformIO configuration, and release metadata and later reworked into "OpenHaldex-C6 V2.10" for commercial release without retaining any licensing or proper attribution to any upstream contributors.*
 
 **OpenHaldex-S3 is developed and vehicle-tested by a VW/Audi-certified electrical and diagnostic specialist using OEM diagnostic procedures, ODIS, measured values, CAN logging, and real vehicle validation.**
 
