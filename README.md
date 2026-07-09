@@ -91,9 +91,9 @@ Required:
 
 1. LilyGo T-2CAN ESP32-S3
    <https://lilygo.cc/en-us/products/t-2can>
-2. OEM Haldex connector pair for your vehicle:
-   - Gen 2 / Gen 4 / Gen 5 6-pin builds commonly use `1J0-973-713` to Haldex and `1J0-973-813` from vehicle
-   - Gen 1 uses a different connector and pinout; confirm against the factory wiring diagram
+2. VW 6-pin Haldex connectors:
+   - `1J0-973-713` to Haldex
+   - `1J0-973-813` from vehicle
 
 Typical hardware cost is under $50 if using the LilyGo board and used OEM connectors.
 
@@ -110,105 +110,35 @@ Basic install:
 
 Removing the controller restores the factory connection path.
 
-## Wiring And Harness
-
-OpenHaldex-S3 is wired as an inline Y-branch harness. The factory vehicle connector plugs into the vehicle side of the harness, the Haldex module plugs into the Haldex side, and the LilyGo T-2CAN sits between the two CAN pairs.
-
-Confirm every pin against the factory wiring diagram for your exact chassis, Haldex generation, and connector housing before powering the board. Similar connector housings can have different pin assignments between generations.
-
-### LilyGo T-2CAN Terminals
-
-1. 12-24V -> fused Haldex power branch.
-2. GND -> Haldex ground branch.
-3. CANLA -> vehicle / chassis CAN low.
-4. CANHA -> vehicle / chassis CAN high.
-5. CANLB -> Haldex module CAN low.
-6. CANHB -> Haldex module CAN high.
-
-Summary:
-
-- Vehicle / chassis CAN goes to CANHA/CANLA.
-- Haldex module CAN goes to CANHB/CANLB.
-- Power and ground are branched to the LilyGo; they still pass through to the Haldex module.
-- Non-CAN vehicle signals pass through unless you are intentionally building custom Gen 1 input/output hardware.
-- Keep CAN pairs twisted as long as practical.
-- Do not undersize 12V power or ground wiring.
-
-### Gen 2 / PQ 6-Pin Example
+## Mk5 VW R32 Wiring Example
 
 This example uses the common Mk5 R32 / PQ style Haldex connector wiring. Confirm wiring for your own vehicle before building a harness.
 
 ### Haldex Connector (`1J0-973-713`)
 
-1. 12V power -> Vehicle pin 1 and LilyGo 12-24V (BK/VI)
-2. Ground -> Vehicle pin 2 and LilyGo GND (BR)
+1. 12V power -> LilyGo 12-24V (BK/VI)
+2. Ground -> LilyGo GND (BR)
 3. Brake -> Vehicle pin 3 (BK/RD)
 4. CAN L -> LilyGo CANLB (OR/BR)
 5. CAN H -> LilyGo CANHB (OR/BK)
 
 ### Vehicle Connector (`1J0-973-813`)
 
-1. 12V power -> Haldex pin 1 and LilyGo 12-24V (BK/VI)
-2. Ground -> Haldex pin 2 and LilyGo GND (BR)
+1. 12V power -> LilyGo 12-24V (BK/VI)
+2. Ground -> LilyGo GND (BR)
 3. Brake -> Haldex pin 3 (BK/RD)
 4. CAN L -> LilyGo CANLA (OR/BR)
 5. CAN H -> LilyGo CANHA (OR/BK)
 
 Summary:
 
-- The 12V feed is passed through and branched to LilyGo 12-24V.
-- Ground is passed through and branched to LilyGo GND.
-- Brake and handbrake style signals pass through. OpenHaldex-S3 does not interrupt them.
-- Chassis CAN enters CANHA/CANLA.
-- Haldex CAN returns from CANHB/CANLB.
-
-### Gen 4 / PQ 6-Pin Pattern
-
-Gen 4 PQ installs use the same inline harness concept as Gen 2 and Gen 5.
-
-1. Pass through the non-CAN pins between the vehicle connector and Haldex connector.
-2. Branch the fused Haldex power feed to LilyGo 12-24V.
-3. Branch Haldex ground / MALT to LilyGo GND.
-4. Vehicle-side CAN L -> LilyGo CANLA.
-5. Vehicle-side CAN H -> LilyGo CANHA.
-6. Haldex-side CAN L -> LilyGo CANLB.
-7. Haldex-side CAN H -> LilyGo CANHB.
-
-Use the factory diagram for the exact vehicle to confirm whether the CAN pair is on pins 4/5, pins 5/6, or a platform-specific layout. Do not assume the Mk5 R32 pin numbers apply to every PQ Haldex controller.
-
-### Gen 5 / MQB 6-Pin Example
-
-This example uses the common Gen 5 / MQB 0CQ style 6-pin Haldex connector layout. Gen 5 vehicles commonly keep the controller on battery power after ignition-off, so enable Power Save after setup.
-
-### Vehicle Connector (`1J0-973-813`)
-
-1. KL15 / ignition feed -> Haldex pin 1.
-2. Ground / MALT -> Haldex pin 2 and LilyGo GND.
-3. Terminal 30 battery power -> Haldex pin 3 and LilyGo 12-24V.
-4. Not used / platform-specific -> pass through only if populated.
-5. Chassis CAN L -> LilyGo CANLA.
-6. Chassis CAN H -> LilyGo CANHA.
-
-### Haldex Connector (`1J0-973-713`)
-
-1. KL15 / ignition feed -> Vehicle pin 1.
-2. Ground / MALT -> Vehicle pin 2.
-3. Terminal 30 battery power -> Vehicle pin 3.
-4. Not used / platform-specific -> pass through only if populated.
-5. Haldex CAN L -> LilyGo CANLB.
-6. Haldex CAN H -> LilyGo CANHB.
-
-Summary:
-
-- Terminal 30 power and ground stay connected to the Haldex module and are branched to the LilyGo.
-- KL15 / ignition feed passes through to the Haldex module.
-- Chassis CAN wakes OpenHaldex-S3 from parked sleep.
-- OpenHaldex-S3 checks ignition state from CAN before staying awake.
-- Haldex CAN must route through CANHB/CANLB, not directly across the harness.
-
-### Gen 1 Note
-
-Gen 1 Haldex wiring uses a different connector and includes brake, handbrake, and K-line style signals. OpenHaldex-S3 does not provide built-in high-side brake or handbrake output drivers. Pass those circuits through unless you are intentionally adding external hardware for a custom Gen 1 installation.
+- Both 12V+ wires go to LilyGo 12-24V.
+- Both ground wires go to LilyGo GND.
+- Chassis CAN goes to CANHA/CANLA.
+- Haldex CAN goes to CANHB/CANLB.
+- Brake and handbrake wires pass through. OpenHaldex-S3 does not interrupt them.
+- Keep CAN pairs twisted as long as practical.
+- Do not undersize 12V power or ground wiring.
 
 ## First Setup
 
