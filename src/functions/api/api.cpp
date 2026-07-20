@@ -627,6 +627,38 @@ static const uds_identity_did_t k_uds_identity_dids[] = {
   {0xF1A1, "VW Data Set Version", "dataSetVersion", true},
 };
 
+static const char* twaiStateString(twai_state_t state) {
+  switch (state) {
+    case TWAI_STATE_STOPPED:    return "stopped";
+    case TWAI_STATE_RUNNING:    return "running";
+    case TWAI_STATE_BUS_OFF:    return "bus-off";
+    case TWAI_STATE_RECOVERING: return "recovering";
+    default:                    return "unknown";
+  }
+}
+
+static void writeTwaiStatusJson(JsonObject out, twai_handle_t handle) {
+  if (!handle) {
+    out["available"] = false;
+    return;
+  }
+  out["available"] = true;
+  twai_status_info_t info = {};
+  if (twai_get_status_info_v2(handle, &info) != ESP_OK) {
+    return;
+  }
+  out["state"] = twaiStateString(info.state);
+  out["msgsToTx"] = info.msgs_to_tx;
+  out["msgsToRx"] = info.msgs_to_rx;
+  out["txErrorCounter"] = info.tx_error_counter;
+  out["rxErrorCounter"] = info.rx_error_counter;
+  out["txFailedCount"] = info.tx_failed_count;
+  out["rxMissedCount"] = info.rx_missed_count;
+  out["rxOverrunCount"] = info.rx_overrun_count;
+  out["arbLostCount"] = info.arb_lost_count;
+  out["busErrorCount"] = info.bus_error_count;
+}
+
 // Aggregated status endpoint used by Home and Diagnostics pages.
 static void handleStatus(AsyncWebServerRequest* request) {
   JsonDocument doc;
@@ -665,6 +697,19 @@ static void handleStatus(AsyncWebServerRequest* request) {
   can["busFailure"] = isBusFailure;
   can["lastChassisMs"] = lastCANChassisTick > 0 ? (millis() - lastCANChassisTick) : 0;
   can["lastHaldexMs"] = lastCANHaldexTick > 0 ? (millis() - lastCANHaldexTick) : 0;
+
+  JsonObject twai = can["twai"].to<JsonObject>();
+  JsonObject twaiChassis = twai["chassis"].to<JsonObject>();
+  writeTwaiStatusJson(twaiChassis, can_bus_0());
+  #if !OH_CAN_HALDEX_MCP2515
+  JsonObject twaiHaldex = twai["haldex"].to<JsonObject>();
+  writeTwaiStatusJson(twaiHaldex, can_bus_1());
+  #else
+  // Haldex bus uses MCP2515, not a native TWAI controller
+  JsonObject twaiHaldex = twai["haldex"].to<JsonObject>();
+  twaiHaldex["available"] = false;
+  twaiHaldex["reason"] = "mcp2515";
+  #endif
 
   JsonObject power = doc["power"].to<JsonObject>();
   powerWriteStatusJson(power);
