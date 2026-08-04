@@ -226,6 +226,10 @@ This example uses the common Term15 / ground / Term30 / CAN pair layout used on 
 - Haldex CAN connects to CANHA/CANLA (CANA).
 - On Gen 5 vehicles, Term30 can remain powered after ignition-off. Enable Power Save after setup.
 
+#### Reference Drawing
+
+# ![Wiring Reference](docs/images/gen4_and_5_wiring.svg)
+
 ## First Setup
 
 After flashing and connecting to the web UI:
