@@ -1,6 +1,10 @@
 # OpenHaldex-S3: DIY AWD Controller for VAG Vehicles
 
-**QUICK ONE-CLICK WEB INSTALLER AT WWW.OPENHALDEX.DEV**
+**Looking for the current OpenHaldex build?** [OpenHaldex SS](https://openhaldex.dev/) is the current SignalScope-powered application, with behavior profiles, tuning maps, live CAN tools, and configuration backup/restore. The official website's [USB installer](https://openhaldex.dev/#installer) installs SS.
+
+**This repository is the separate OpenHaldex-S3 edition.** Its MIT-licensed source and [S3 releases](https://github.com/meatro/OpenHaldex-S3/releases) remain available for users who prefer public source. SS is a proprietary application, not a source update to this repository. S3 and SS have separate releases, even when their version numbers match.
+
+Before migrating an existing S3 device to SS, export valuable maps and settings and read the SS installation and migration notes. The first SS installation requires USB and replaces the application currently on the board.
 
 ![OpenHaldex-S3 screenshot](https://openhaldex.dev/wp-content/uploads/2026/04/New-Project-2.webp)
 
@@ -12,7 +16,7 @@ The project supports Haldex generations **1, 2, 4, and 5**. VAG did not use Gen 
 
 Designed to be easy to build, configure, and use, OpenHaldex-S3 requires no soldering or advanced electrical experience.
 
-Current release: **v1.1**. This release includes Gen 5 / MQB support, parked sleep power saving for vehicles that keep the controller powered from battery after ignition-off, and expanded Haldex diagnostics.
+Latest S3 release: **v1.1**. This release includes Gen 5 / MQB support, parked sleep power saving for vehicles that keep the controller powered from battery after ignition-off, and expanded Haldex diagnostics.
 
 ## Open Source And Provenance
 
@@ -81,7 +85,7 @@ This project changes drivetrain behavior. Use it accordingly.
 - Select the correct Haldex generation before saving setup.
 - Calibrate the learned Haldex output table before relying on requested lock values.
 - Verify mapped speed, throttle, and RPM inputs at idle and low speed.
-- Do not tune while driving unless another person is operating the UI.
+- Configure maps/settings and review dashboard data or logs only while safely parked. Do not operate or watch the UI while driving.
 - Keep a known conservative map available.
 - CAN View is for inspection and troubleshooting. It is not intended to replace a dedicated high-rate USB CAN interface.
 
@@ -398,7 +402,9 @@ Loading a TXT map imports it into runtime and persists it through the current ma
 
 ## Firmware Installation
 
-For the simplest install, use the quick web installer at <https://openhaldex.dev>. The details below are for manual builds, release assets, and OTA behavior.
+For this legacy S3 edition, use the [S3 release assets](https://github.com/meatro/OpenHaldex-S3/releases) or the manual build instructions below. The current web installer at <https://openhaldex.dev> installs the separate OpenHaldex SS application, not this repository's S3 firmware. Before migrating to SS, export valuable maps/settings and read the SS installation and migration notes.
+
+The details below describe S3 manual builds, release assets, and OTA behavior.
 
 Firmware installation is required once. After that, updates can be performed through the OTA page.
 
